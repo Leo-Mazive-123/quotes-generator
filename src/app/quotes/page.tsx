@@ -1,20 +1,18 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { supabase } from "../lib/supabase";
+import { supabase } from "../../lib/supabase";
+import Navbar from "../../components/Navbar";
+import Footer from "../../components/Footer";
 import { motion, AnimatePresence } from "framer-motion";
-import Navbar from "../components/Navbar";
-import Footer from "../components/Footer";
-import { FaCopy, FaWhatsapp, FaFacebook, FaClipboard, FaList, FaTimes, FaHeart, FaRegHeart } from "react-icons/fa";
-
-// ------------------- Category Labels -------------------
-const categoryLabels: Record<string, string> = {
-  Motivation: "Motivation",
-  "Life Lessons": "Life",
-  "Love Quotes": "Love",
-  "Success & Achievement": "Success",
-  "Friendship & Bonds": "Friendship",
-};
+import {
+  FaCopy,
+  FaWhatsapp,
+  FaFacebook,
+  FaTimes,
+  FaHeart,
+  FaRegHeart,
+} from "react-icons/fa";
 
 interface Quote {
   id: number;
@@ -23,7 +21,15 @@ interface Quote {
   category?: string;
 }
 
-const Home: React.FC = () => {
+const categoryLabels: Record<string, string> = {
+  Motivation: "Motivation",
+  "Life Lessons": "Life",
+  "Love Quotes": "Love",
+  "Success & Achievement": "Success",
+  "Friendship & Bonds": "Friendship",
+};
+
+const Quotes: React.FC = () => {
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [quoteIndex, setQuoteIndex] = useState<number | null>(null);
   const [categories, setCategories] = useState<string[]>([]);
@@ -60,7 +66,6 @@ const Home: React.FC = () => {
       if (data) {
         const fetchedQuotes = data as Quote[];
         setQuotes(fetchedQuotes);
-
         const firstSix = fetchedQuotes.slice(0, 6);
         setOfflineQuotes(firstSix);
         localStorage.setItem("offlineQuotes", JSON.stringify(firstSix));
@@ -88,16 +93,24 @@ const Home: React.FC = () => {
       .filter(Boolean) as string[];
 
     const uniqueCategories = Array.from(new Set(mappedCategories));
-    setCategories(uniqueCategories);
+
+    // Only update if categories changed
+    setCategories((prev) =>
+      prev.length !== uniqueCategories.length ||
+      !prev.every((c, idx) => c === uniqueCategories[idx])
+        ? uniqueCategories
+        : prev
+    );
   }, [quotes]);
 
-  // ------------------- Setup Online/Offline -------------------
+  // ------------------- Handlers -------------------
   const handleOffline = useCallback(() => setIsOffline(true), []);
   const handleOnline = useCallback(() => {
     setIsOffline(false);
     fetchQuotes();
   }, [fetchQuotes]);
 
+  // ------------------- Effects -------------------
   useEffect(() => {
     setIsOffline(!navigator.onLine);
     window.addEventListener("online", handleOnline);
@@ -106,8 +119,8 @@ const Home: React.FC = () => {
     const storedQuotes = localStorage.getItem("offlineQuotes");
     if (storedQuotes) setOfflineQuotes(JSON.parse(storedQuotes));
 
-    const storedFavs = localStorage.getItem("favoriteQuotes");
-    if (storedFavs) setFavorites(JSON.parse(storedFavs));
+    const storedFavorites = localStorage.getItem("favoriteQuotes");
+    if (storedFavorites) setFavorites(JSON.parse(storedFavorites));
 
     fetchQuotes();
 
@@ -122,34 +135,28 @@ const Home: React.FC = () => {
   }, [quotes, fetchCategories]);
 
   // ------------------- Filtering -------------------
-  const getFilteredQuotes = () => {
-    let filtered = quotes.filter((q) => {
-      const quoteCategory = q.category ? categoryLabels[q.category.trim()] || q.category.split(" ")[0] : "";
-      const matchesCategory = selectedCategory ? quoteCategory.toLowerCase() === selectedCategory.toLowerCase() : true;
+  const getFilteredQuotes = useCallback(() => {
+    return quotes.filter((q) => {
+      const quoteCategory = q.category
+        ? categoryLabels[q.category.trim()] || q.category.trim().split(" ")[0]
+        : "";
+      const matchesCategory = selectedCategory
+        ? quoteCategory.toLowerCase() === selectedCategory.toLowerCase()
+        : true;
       const matchesSearch =
         q.quote.toLowerCase().includes(searchTerm.toLowerCase()) ||
         q.author.toLowerCase().includes(searchTerm.toLowerCase());
-      return matchesCategory && matchesSearch;
+      const matchesFavorites = showFavoritesOnly ? favorites.includes(q.id) : true;
+      return matchesCategory && matchesSearch && matchesFavorites;
     });
-
-    if (showFavoritesOnly) filtered = filtered.filter((q) => favorites.includes(q.id));
-
-    return filtered;
-  };
+  }, [quotes, selectedCategory, searchTerm, showFavoritesOnly, favorites]);
 
   const filteredQuotes = getFilteredQuotes();
   const displayedQuotes = isOffline ? offlineQuotes : filteredQuotes.slice(0, displayCount);
   const currentQuote =
     quoteIndex !== null ? (isOffline ? offlineQuotes[quoteIndex] : filteredQuotes[quoteIndex]) : null;
 
-  // ------------------- Favorites -------------------
-  const toggleFavorite = (id: number) => {
-    const updated = favorites.includes(id) ? favorites.filter((f) => f !== id) : [...favorites, id];
-    setFavorites(updated);
-    localStorage.setItem("favoriteQuotes", JSON.stringify(updated));
-  };
-
-  // ------------------- Clipboard & Sharing -------------------
+  // ------------------- Clipboard -------------------
   const copyToClipboard = () => {
     if (!currentQuote) return;
     navigator.clipboard.writeText(`"${currentQuote.quote}" - ${currentQuote.author}`);
@@ -157,60 +164,57 @@ const Home: React.FC = () => {
     setTimeout(() => setShowToast(false), 1500);
   };
 
-  const shareOnX = () => {
+  // ------------------- Favorites -------------------
+  const toggleFavorite = (id: number) => {
+    const updated = favorites.includes(id)
+      ? favorites.filter((fav) => fav !== id)
+      : [...favorites, id];
+    setFavorites(updated);
+    localStorage.setItem("favoriteQuotes", JSON.stringify(updated));
+  };
+
+  // ------------------- Sharing -------------------
+  const shareQuote = (platform: "twitter" | "whatsapp" | "facebook") => {
     if (!currentQuote) return;
-    window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(`"${currentQuote.quote}" - ${currentQuote.author}`)}`, "_blank");
+    const text = `"${currentQuote.quote}" - ${currentQuote.author}`;
+    let url = "";
+    switch (platform) {
+      case "twitter":
+        url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
+        break;
+      case "whatsapp":
+        url = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
+        break;
+      case "facebook":
+        url = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(
+          "https://your-app-link.com"
+        )}&quote=${encodeURIComponent(text)}`;
+        break;
+    }
+    window.open(url, "_blank");
   };
 
-  const shareOnWhatsApp = () => {
-    if (!currentQuote) return;
-    window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(`"${currentQuote.quote}" - ${currentQuote.author}`)}`, "_blank");
+  const handleCategoryChange = (category: string) => {
+    setSelectedCategory(category);
+    setDisplayCount(6);
   };
 
-  const shareOnFacebook = () => {
-    if (!currentQuote) return;
-    window.open(
-      `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent("https://your-app-link.com")}&quote=${encodeURIComponent(`"${currentQuote.quote}" - ${currentQuote.author}`)}`,
-      "_blank"
-    );
-  };
-
-  // ------------------- Random Quote -------------------
-  const generateQuote = () => {
-    const filtered = isOffline ? offlineQuotes : getFilteredQuotes();
-    if (!filtered.length) return;
-    const randomIndex = Math.floor(Math.random() * filtered.length);
-    setQuoteIndex(randomIndex);
-  };
-
-  // ------------------- Render -------------------
   return (
     <div className="flex flex-col min-h-screen bg-gray-50 overflow-x-hidden">
       <Navbar />
 
       {/* Hero */}
       <section
-        className="relative flex flex-col items-center justify-center text-center h-screen bg-cover bg-center"
-        style={{ backgroundImage: `url('/tree2.png')` }}
+        className="relative flex flex-col items-center justify-center text-center h-[60vh] bg-cover bg-center bg-no-repeat"
+        style={{ backgroundImage: `url('/quotes.png')` }}
       >
-        <div className="absolute inset-0 bg-black/50"></div>
-        <div className="relative z-10 max-w-3xl px-4">
-          <h1 className="text-4xl md:text-6xl font-extrabold text-white mb-6 tracking-tight leading-tight drop-shadow-lg">
-            Daily Inspiration at Your Fingertips
-          </h1>
-          <p className="text-lg md:text-2xl text-gray-200 italic mb-8 leading-relaxed drop-shadow-md">
-            Generate, copy, and share quotes. <br />
-            <span className="text-yellow-300 font-semibold">#Fuel your day! </span>
-          </p>
-          <motion.button
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={generateQuote}
-            className="bg-indigo-600 text-white px-8 py-3 rounded-full shadow-lg hover:bg-indigo-700 transition-all font-semibold text-lg"
-          >
-            Get Random Quote
-          </motion.button>
-        </div>
+        <div className="absolute inset-0 bg-black/40"></div>
+        <h1 className="relative z-10 text-4xl md:text-5xl font-bold text-white drop-shadow-lg">
+          Explore Inspiring Quotes
+        </h1>
+        <p className="relative z-10 text-white/90 mt-2">
+          Discover, search, and share quotes that inspire you
+        </p>
       </section>
 
       {/* Offline Banner */}
@@ -222,9 +226,9 @@ const Home: React.FC = () => {
       )}
 
       {/* Main Content */}
-      <main className="flex-grow flex flex-col items-center p-6 relative">
-        {/* Search, Category, Favorites Toggle */}
-        <div className="flex flex-col md:flex-row justify-center gap-4 mb-8 w-full max-w-3xl mx-auto items-center">
+      <main className="flex-grow flex flex-col items-center p-6 relative z-10 w-full">
+        {/* Search & Filters */}
+        <div className="flex flex-col md:flex-row justify-center gap-4 mb-8 max-w-3xl w-full items-center">
           <input
             type="text"
             placeholder="Search quotes or authors..."
@@ -238,10 +242,7 @@ const Home: React.FC = () => {
           <select
             className="px-4 py-2 border rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
             value={selectedCategory}
-            onChange={(e) => {
-              setSelectedCategory(e.target.value);
-              setDisplayCount(6);
-            }}
+            onChange={(e) => handleCategoryChange(e.target.value)}
           >
             <option value="">All</option>
             {categories.map((cat) => (
@@ -251,9 +252,9 @@ const Home: React.FC = () => {
             ))}
           </select>
           <button
-            onClick={() => setShowFavoritesOnly((prev) => !prev)}
-            className={`px-4 py-2 rounded-lg shadow font-semibold ${
-              showFavoritesOnly ? "bg-red-600 text-white" : "bg-gray-200 text-gray-700"
+            onClick={() => setShowFavoritesOnly(!showFavoritesOnly)}
+            className={`px-4 py-2 rounded-lg shadow-sm font-semibold transition ${
+              showFavoritesOnly ? "bg-red-500 text-white" : "bg-gray-200 text-gray-800"
             }`}
           >
             {showFavoritesOnly ? "Show All Quotes" : "Show Favorites"}
@@ -262,7 +263,7 @@ const Home: React.FC = () => {
 
         {/* Quotes Grid */}
         <div
-          className={`grid gap-6 max-w-6xl mx-auto ${
+          className={`grid gap-6 max-w-6xl mx-auto w-full ${
             displayedQuotes.length === 1
               ? "grid-cols-1 place-items-center"
               : displayedQuotes.length === 2
@@ -280,10 +281,9 @@ const Home: React.FC = () => {
               transition={{ duration: 0.5, delay: idx * 0.1 }}
             >
               <div className="flex-grow">
-                <p className="italic text-gray-800">{`"${q.quote}"`}</p>
+                <p className="italic text-gray-800">&quot;{q.quote}&quot;</p>
                 <p className="mt-4 font-semibold text-gray-900">- {q.author}</p>
               </div>
-
               <div className="mt-6 flex justify-between items-center">
                 <span className="text-green-600 font-bold animate-bounce">Click Me ↑</span>
                 <button
@@ -293,7 +293,11 @@ const Home: React.FC = () => {
                   }}
                   className="text-2xl transition"
                 >
-                  {favorites.includes(q.id) ? <FaHeart className="text-red-500" /> : <FaRegHeart className="text-gray-400" />}
+                  {favorites.includes(q.id) ? (
+                    <FaHeart className="text-red-500" />
+                  ) : (
+                    <FaRegHeart className="text-gray-400" />
+                  )}
                 </button>
               </div>
             </motion.div>
@@ -301,8 +305,8 @@ const Home: React.FC = () => {
         </div>
 
         {/* View More */}
-        {!showFavoritesOnly && displayCount < filteredQuotes.length && !isOffline && (
-          <div className="mt-6 flex justify-center">
+        {!showFavoritesOnly && displayCount < filteredQuotes.length && (
+          <div className="mt-6 flex justify-center w-full">
             <button
               onClick={() => setDisplayCount((prev) => prev + 6)}
               className="bg-indigo-600 text-white px-6 py-3 rounded-full shadow-lg hover:bg-indigo-700 transition font-semibold"
@@ -313,35 +317,21 @@ const Home: React.FC = () => {
         )}
       </main>
 
-
-      {/* Features Section */}
-        <section className="py-17 bg-gray-50 text-center w-full">
-          <h2 className="text-4xl font-bold mb-12 text-gray-900">Features</h2>
-          <div className="grid md:grid-cols-4 gap-8 max-w-6xl mx-auto">
-            <div className="bg-white p-6 rounded-2xl shadow-lg hover:scale-105 transition">
-              <FaCopy className="text-indigo-600 text-4xl mb-4 mx-auto" />
-              <h3 className="font-semibold mb-2">Copy & Share</h3>
-              <p className="text-gray-600">Instantly copy quotes or share to social media platforms.</p>
-            </div>
-            <div className="bg-white p-6 rounded-2xl shadow-lg hover:scale-105 transition">
-              <span className="text-black text-4xl mb-4 mx-auto font-bold">X</span>
-              <h3 className="font-semibold mb-2">Social Ready</h3>
-              <p className="text-gray-600">Share your favorite quotes on X, WhatsApp, or Facebook.</p>
-            </div>
-            <div className="bg-white p-6 rounded-2xl shadow-lg hover:scale-105 transition">
-              <FaClipboard className="text-green-500 text-4xl mb-4 mx-auto" />
-              <h3 className="font-semibold mb-2">Favorites</h3>
-              <p className="text-gray-600">Bookmark your top quotes and view them anytime.</p>
-            </div>
-            <div className="bg-white p-6 rounded-2xl shadow-lg hover:scale-105 transition">
-              <FaList className="text-purple-600 text-4xl mb-4 mx-auto" />
-              <h3 className="font-semibold mb-2">Categories</h3>
-              <p className="text-gray-600">Explore quotes by category like Motivation, Life, Love, and Success.</p>
-            </div>
-          </div>
-        </section>
-
-      <Footer />
+      {/* Toast */}
+      <AnimatePresence>
+        {showToast && (
+          <motion.div
+            key="toast"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            transition={{ duration: 0.3 }}
+            className="fixed bottom-10 left-1/2 -translate-x-1/2 bg-gray-800 text-white px-6 py-3 rounded-lg shadow-lg z-[9999]"
+          >
+            Quote copied ✅
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Quote Modal */}
       <AnimatePresence mode="wait">
@@ -362,40 +352,65 @@ const Home: React.FC = () => {
               </div>
 
               <div className="flex-grow">
-                <p className="text-2xl italic text-gray-800">{`"${currentQuote.quote}"`}</p>
+                <p className="text-2xl italic text-gray-800">&quot;{currentQuote.quote}&quot;</p>
                 <p className="mt-4 font-semibold text-gray-900">- {currentQuote.author}</p>
               </div>
 
-              <div className="flex justify-between items-center mt-6">
-                <div className="flex justify-center gap-4 flex-wrap">
-                  <button onClick={copyToClipboard} className="bg-indigo-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-indigo-700 transition">
+              <div className="flex justify-between items-center mt-6 flex-wrap gap-4">
+                <div className="flex gap-4 flex-wrap">
+                  <button
+                    onClick={copyToClipboard}
+                    className="bg-indigo-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-indigo-700 transition"
+                  >
                     <FaCopy /> Copy
                   </button>
-                  <button onClick={shareOnX} className="bg-black text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-gray-800 transition">
+                  <button
+                    onClick={() => shareQuote("twitter")}
+                    className="bg-black text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-gray-800 transition"
+                  >
                     X
                   </button>
-                  <button onClick={shareOnWhatsApp} className="bg-green-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-green-700 transition">
+                  <button
+                    onClick={() => shareQuote("whatsapp")}
+                    className="bg-green-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-green-700 transition"
+                  >
                     <FaWhatsapp /> WhatsApp
                   </button>
-                  <button onClick={shareOnFacebook} className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700 transition">
+                  <button
+                    onClick={() => shareQuote("facebook")}
+                    className="bg-blue-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700 transition"
+                  >
                     <FaFacebook /> Facebook
                   </button>
                 </div>
 
-                <button onClick={() => toggleFavorite(currentQuote.id)} className="text-3xl transition">
-                  {favorites.includes(currentQuote.id) ? <FaHeart className="text-red-500" /> : <FaRegHeart className="text-gray-400" />}
+                <button
+                  onClick={() => toggleFavorite(currentQuote.id)}
+                  className="text-3xl transition"
+                >
+                  {favorites.includes(currentQuote.id) ? (
+                    <FaHeart className="text-red-500" />
+                  ) : (
+                    <FaRegHeart className="text-gray-400" />
+                  )}
                 </button>
               </div>
 
               <div className="flex justify-between mt-6">
                 <button
-                  onClick={() => setQuoteIndex((prev) => (prev !== null ? prev - 1 : 0))}
+                  onClick={() =>
+                    setQuoteIndex((prev) => (prev !== null ? Math.max(prev - 1, 0) : 0))
+                  }
                   className="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300 transition"
                 >
                   Previous
                 </button>
                 <button
-                  onClick={() => setQuoteIndex((prev) => (prev !== null ? (prev + 1) % filteredQuotes.length : 0))}
+                  onClick={() =>
+                    setQuoteIndex((prev) =>
+                      prev !== null ? (prev + 1) % filteredQuotes.length : 0
+                    )
+                  }
                   className="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300 transition"
                 >
                   Next
@@ -405,16 +420,10 @@ const Home: React.FC = () => {
           </motion.div>
         )}
       </AnimatePresence>
-      
 
-      {/* Toast */}
-      {showToast && (
-        <div className="fixed bottom-10 left-1/2 -translate-x-1/2 bg-gray-800 text-white px-6 py-3 rounded-lg shadow-lg z-[9999] transition-opacity duration-500 opacity-100">
-          Quote copied ✅
-        </div>
-      )}
+      <Footer />
     </div>
   );
 };
 
-export default Home;
+export default Quotes;
