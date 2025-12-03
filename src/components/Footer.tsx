@@ -122,7 +122,7 @@ const Footer: React.FC = () => {
                   className="cursor-pointer underline hover:text-[#38BDF8]"
                   onClick={() => handleCopy("leomazive@example.com", "email")}
                 >
-                  leomazive@example.com
+                  leomazive01@gmail.com
                 </span>
                 {copied === "email" && <span className="text-green-400 ml-2">Copied!</span>}
               </p>
@@ -132,7 +132,7 @@ const Footer: React.FC = () => {
                   className="cursor-pointer underline hover:text-[#38BDF8]"
                   onClick={() => handleCopy("+263712345678", "phone")}
                 >
-                  +263 71 234 5678
+                  +263 77 395 0814
                 </span>
                 {copied === "phone" && <span className="text-green-400 ml-2">Copied!</span>}
               </p>
